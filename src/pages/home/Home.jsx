@@ -2,18 +2,12 @@ import axios from "axios";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { base_img_rul, base_url } from "../../api/config";
 import { Link } from "react-router-dom";
-import {
-  Box,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  Stack,
-} from "@mui/material";
+import { Button, Stack } from "@mui/material";
 import Paper from "@mui/material/Paper";
 import InputBase from "@mui/material/InputBase";
 import LoadingButton from "@mui/lab/LoadingButton";
 import TuneIcon from "@mui/icons-material/Tune";
+import { fetchCategories, fetchProducts } from "../../api/apiProudctsCall";
 const RES_FIELDS = "title,description,price,main_image,stock";
 const LIMIT = 9;
 
@@ -24,99 +18,93 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState(null);
-
-  const [searchBy, setSearchBy] = useState("title");
-
+  const [searchQuery, setSearchQuery] = useState("");
+  const [minPrice, setMinPrice] = useState(""); // Min Price state
+  const [maxPrice, setMaxPrice] = useState(""); // Max Price state
+  const [minStock, setMinStock] = useState(""); // Min Price state
+  const [maxStock, setMaxStock] = useState(""); // Max Price state
   const pagesNumber = useRef(0);
 
-  //next page
-  const nextPage = () => {
-    if (currentPage < pagesNumber.current) {
-      setCurrentPage((prevState) => prevState + 1);
-    }
-  };
-  //prev page
-  const previousPage = () => {
-    if (currentPage > 1) setCurrentPage((prevState) => prevState - 1);
-  };
-
-  //filters submit
-  const filterSubmit = async (e) => {
-    console.log({
-      searchQuery,
-      searchBy,
-    });
-
-    e.preventDefault();
+  const loadProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const cat_id = active === "all" ? "" : active;
-      const search_field = searchQuery ? searchBy : "";
-      const { data } = await axios.get(
-        `${base_url}/products?cat_id=${cat_id}&fields=${RES_FIELDS}&limit=${LIMIT}&page=${currentPage}&search=${searchQuery}&search_field=${search_field}`
+      const { data } = await fetchProducts(
+        active,
+        currentPage,
+        searchQuery,
+        minPrice,
+        maxPrice,
+        minStock,
+        maxStock
       );
-      console.log("the async api:", data);
       pagesNumber.current = data.pages;
-      setProducts(data.data);
-    } catch (e) {
-      console.log("proudct requset err:", e);
-      setError(e);
+      setProducts(data);
+    } catch (error) {
+      setError(error);
+      console.error("Error fetching products:", error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [
+    active,
+    currentPage,
+    searchQuery,
+    minPrice,
+    maxPrice,
+    minStock,
+    maxStock,
+  ]);
 
-  const getCategories = useCallback(async () => {
-    const { data } = await axios.get(`${base_url}/categories`);
-    console.log(data);
-
-    setCategories(data.data);
+  const loadCategories = useCallback(async () => {
+    try {
+      const { data } = await fetchCategories();
+      setCategories(data);
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+    }
   }, []);
 
-  const getProducts = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const cat_id = active === "all" ? "" : active;
-      const search_field = searchQuery ? searchBy : "";
-      const { data } = await axios.get(
-        `${base_url}/products?cat_id=${cat_id}&fields=${RES_FIELDS}&limit=${LIMIT}&page=${currentPage}&search=${searchQuery}&search_field=${search_field}`
-      );
-      console.log("the async api:", data);
-      pagesNumber.current = data.pages;
-      setProducts(data.data);
-    } catch (e) {
-      console.log("proudct requset err:", e);
-      setError(e);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [active, currentPage]);
-
   useEffect(() => {
-    getCategories();
-  }, [getCategories]);
+    loadCategories();
+    loadProducts();
+  }, [loadCategories, loadProducts]);
 
-  useEffect(() => {
-    getProducts();
-  }, [getProducts]);
+  const nextPage = () =>
+    currentPage < pagesNumber.current && setCurrentPage((prev) => prev + 1);
+  const previousPage = () =>
+    currentPage > 1 && setCurrentPage((prev) => prev - 1);
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setMinPrice("");
+    setMaxPrice("");
+    setMinStock("");
+    setMaxStock("");
+  };
 
   return (
     <div className="my-5 container mx-auto">
       <FilterBar
         {...{
+          clearFilters,
           searchQuery,
           setSearchQuery,
-          searchBy,
-          setSearchBy,
-          filterSubmit,
+          loadProducts,
+          minPrice,
+          setMinPrice,
+          maxPrice,
+          setMaxPrice,
+          minStock,
+          setMinStock,
+          maxStock,
+          setMaxStock,
         }}
       />
       <div className="flex gap-2">
         <Categories {...{ categories, active, setActive }} />
         {!isLoading ? (
           <div className="lg:w-3/4">
-            <Products {...{ products }} />
+            <Products products={products} />
             {pagesNumber.current && (
               <PaginationBar
                 {...{
@@ -129,12 +117,9 @@ export default function Home() {
             )}
           </div>
         ) : (
-          <>loading...</>
+          <div>Loading...</div>
         )}
       </div>
-      {/* Categories */}
-      {/* Proudcts */}
-      {/* filters */}
     </div>
   );
 }
@@ -288,11 +273,18 @@ const PaginationBar = ({ currentPage, pages, nextPage, previousPage }) => {
 };
 
 const FilterBar = ({
-  searchBy,
-  setSearchBy,
   searchQuery,
   setSearchQuery,
   filterSubmit,
+  clearFilters,
+  minPrice,
+  setMinPrice,
+  maxPrice,
+  setMaxPrice,
+  minStock,
+  setMinStock,
+  maxStock,
+  setMaxStock,
 }) => {
   return (
     <Stack
@@ -305,30 +297,12 @@ const FilterBar = ({
     >
       {/* search */}
       <SearchFiled {...{ searchQuery, setSearchQuery }} />
-      <Box sx={{ minWidth: 120 }}>
-        <FormControl fullWidth>
-          <InputLabel id="search-by">Search By</InputLabel>
-          <Select
-            labelId="search-by"
-            id="search-by-fields"
-            value={searchBy}
-            label="Search By"
-            onChange={(e) => {
-              setSearchBy(e.target.value);
-              console.log(e.target.value);
-            }}
-          >
-            <MenuItem value={"title"}>Title</MenuItem>
-            <MenuItem value={"price"}>Price</MenuItem>
-            <MenuItem value={"stock"}>Stock</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
       {/* price */}
+
       {/* stock */}
       {/* sort_field */}
       {/* sort_order */}
-      <LoadingButton
+      {/* <LoadingButton
         loading={false}
         loadingPosition={"start"}
         startIcon={<TuneIcon />}
@@ -336,7 +310,15 @@ const FilterBar = ({
         variant="outlined"
       >
         Apply
-      </LoadingButton>
+      </LoadingButton> */}
+      <Button
+        type="button"
+        variant="outlined"
+        color="secondary"
+        onClick={clearFilters}
+      >
+        Clear
+      </Button>
     </Stack>
   );
 };
